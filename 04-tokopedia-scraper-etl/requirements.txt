@@ -1,0 +1,6 @@
+pandas>=2.0
+# needed only for live scraping (LIVE_SCRAPE=1)
+selenium>=4.15
+beautifulsoup4>=4.12
+webdriver-manager>=4.0
+lxml>=5.0
