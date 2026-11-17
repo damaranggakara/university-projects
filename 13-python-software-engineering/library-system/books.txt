@@ -1,0 +1,11 @@
+1|Harry Potter and the Sorcerer's Stone|J.K. Rowling|Fantasy|1997
+2|The Lord of the Rings|J.R.R. Tolkien|Fantasy|1954
+3|To Kill a Mockingbird|Harper Lee|Fiction|1960
+4|1984|George Orwell|Dystopian|1949
+5|Pride and Prejudice|Jane Austen|Romance|1813
+6|The Great Gatsby|F. Scott Fitzgerald|Fiction|1925
+7|The Catcher in the Rye|J.D. Salinger|Fiction|1951
+8|Moby-Dick|Herman Melville|Adventure|1851
+9|War and Peace|Leo Tolstoy|Historical Fiction|1869
+10|The Alchemist|Paulo Coelho|Philosophical Fiction|1988
+

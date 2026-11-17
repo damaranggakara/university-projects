@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}Borrow a Movie{% endblock %}
+
+{% block content %}
+    <h2>Borrow a Movie</h2>
+    <form method="POST">
+        <label for="name">Your Name:</label>
+        <input type="text" id="name" name="name" placeholder="Enter your name" required><br>
+
+        <label for="borrow_date">Borrow Date:</label>
+        <input type="date" id="borrow_date" name="borrow_date" required><br>
+
+        <input type="hidden" id="movie_title" name="movie_title" required>
+
+        <h3>Select a Movie to Borrow:</h3>
+        <table id="movieTable" class="movie-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Genre</th>
+                    <th>Year</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for movie in movies %}
+                <tr onclick="selectMovie('{{ movie.title }}')">
+                    <td>{{ movie.title }}</td>
+                    <td>{{ movie.genre }}</td>
+                    <td>{{ movie.year }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <p id="selectedMovie" style="font-weight: bold;"></p>
+        
+        <button type="submit">Borrow</button>
+    </form>
+
+    <script>
+        function selectMovie(movieTitle) {
+            // Set the hidden field with the selected movie title
+            document.getElementById('movie_title').value = movieTitle;
+            // Display the selected movie below the table
+            document.getElementById('selectedMovie').innerText = "Selected Movie: " + movieTitle;
+        }
+    </script>
+{% endblock %}
