@@ -1,0 +1,7 @@
+# Requires Python <= 3.12
+stable-baselines3>=2.3,<3
+gym==0.26.2          # the notebook uses the legacy API; SB3 wraps it via shimmy
+shimmy>=2.0
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
