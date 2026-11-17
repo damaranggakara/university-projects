@@ -1,0 +1,214 @@
+# Hotel Booking Normalisation (0NF → 3NF) and ETL
+
+Taking a wide, unnormalised spreadsheet of hotel bookings to third normal form in
+PostgreSQL, the decomposition reasoned through step by step in a notebook, the schema
+enforced by database constraints, and the result verified lossless.
+
+Coursework for Metode Sains Data II (Data Science Methods II), Semester 3,
+**ported from MySQL to PostgreSQL** and rebuilt.
+
+## Start here
+
+**[`notebooks/normalisation_to_postgres.ipynb`](notebooks/normalisation_to_postgres.ipynb)**
+
+The notebook is the main artifact. It walks 0NF → 1NF → 2NF → 3NF, creates the schema in
+PostgreSQL through SQLAlchemy, loads the data, and proves the decomposition lost nothing.
+It renders with its outputs on GitHub, so the reasoning and the evidence are both visible
+without running anything.
+
+Every claim in it is demonstrated rather than asserted, including, deliberately, two
+inserts the database rejects.
+
+## Source
+
+`data/hotel_0nf.xlsx`, 49 bookings × 15 columns, unnormalised: `Booking_ID`, `Guest_ID`,
+adults, children, weekend/week nights, meal plan, parking, room type, lead time, market
+source, price, special requests, reservation date, booking status. No keys, no constraints,
+every category name repeated inline as text.
+
+## 1NF: atomic, consistently typed values
+
+The violation is invisible from reading the table: `date of reservation` holds **two
+different representations in one column**: 16 rows as `2015-02-10 00:00:00`, 33 as
+`2/28/2018`.
+
+It matters more than it looks:
+
+```
+single format  -> 33 of 49 dates lost as NaT
+format-aware   -> 0 lost
+```
+
+Parsing with one format silently discards two thirds of the data. Nothing raises. The
+loader tries each known format and raises on anything unparseable, so a bad date fails the
+build instead of entering the warehouse as a null.
+
+**The port is what found this.** MySQL accepted the mixed strings on insert into a `DATE`
+column; PostgreSQL rejects them. The stricter database surfaced a latent data-quality bug
+that had been sitting in the coursework.
+
+Also: `parking` held `'0'`/`'1'` as text → `boolean`. Column names with spaces
+(`weekend nights`) needed backtick quoting in MySQL and would have needed double quotes in
+PostgreSQL in every query thereafter; renamed to snake_case.
+
+## 2NF: already satisfied, and the original's claim doesn't hold
+
+2NF concerns partial dependencies, which require a composite key. So: is there one?
+
+```
+distinct booking_id : 49        booking_id unique? True
+distinct guest_id   : 49        guest_id unique?   True
+bookings per guest  : min 1, max 1
+```
+
+**Both are unique across all 49 rows: a strict 1:1.** `booking_id` alone identifies a row,
+so no composite key exists and there is no partial dependency for 2NF to remove.
+
+The original coursework split guest attributes into their own table and described that as
+removing a partial dependency. It was not. A `guest` table is still created here, for an
+honest reason instead: it is the correct shape for the domain, since a hotel guest can
+obviously book twice. On this 49-row extract it is a **degenerate dimension** that removes
+no redundancy, a different claim from saying it normalises something.
+
+## 3NF: transitive dependencies
+
+Four attributes repeat across all 49 rows because each describes a *category*, not a
+booking:
+
+| Repeated text | Distinct values | Lookup table |
+|---|---|---|
+| `meal` | 2 | `dim_meal_plan` |
+| `room type` | 3 | `dim_room_type` |
+| `source` | 4 | `dim_booking_source` |
+| `booking status` | 2 | `dim_booking_status` |
+
+`lead_time` and `price` have high cardinality because they are genuine measures of the
+booking itself, so they stay.
+
+```
+category text stored: 1920 chars in 0NF -> 105 chars in 3NF (95% less)
+```
+
+Beyond the storage, the lookup makes the valid set **enforceable**: the 0NF table accepted
+any spelling of `Room_Type 1`.
+
+### The original's 3NF step duplicated data
+
+It created a `status` table of `(Guest_ID, Booking_ID, booking status)` while *also*
+leaving `booking status` in the bookings table. Storing the same fact in two places is the
+problem normalisation exists to solve, not a consequence of solving it.
+
+## Enforcement is the part pandas cannot do
+
+A normal form is a property of a **schema**. Dataframes split into column groups
+demonstrate a decomposition but guarantee nothing; nothing prevents a duplicate key, an
+orphaned foreign key, or a nonsense value.
+
+`sql/01_schema.sql` declares `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE` and `CHECK`, which the
+database upholds on every insert from now on, including ones made by code that has never
+seen this notebook. The notebook demonstrates it by trying two inserts the 0NF spreadsheet
+would have accepted without complaint:
+
+```
+1. orphan foreign key rejected: violates foreign key constraint "booking_room_type_id_fkey"
+2. zero-night booking rejected: violates check constraint "booking_check"
+```
+
+One design note in the DDL: the identity columns are `GENERATED BY DEFAULT`, not `ALWAYS`.
+`ALWAYS` is stricter and usually preferable, but it forbids inserting an explicit id, which
+blocks a loader that assigns its own surrogate keys, as both the notebook and `etl.py` do.
+
+## Lossless: verified, not assumed
+
+A decomposition that cannot be rejoined has destroyed information, and column-slicing can
+do that silently. `v_booking_flat` rebuilds the original wide table from the normalised
+one, and the notebook compares it to the 1NF input column for column:
+
+```
+rows: source 49  rebuilt 49
+columns identical: 15 / 15
+lossless: the 3NF tables reproduce the 1NF table exactly
+```
+
+`etl.py` checks it a second, independent way, price total 4489.93 and nights total 141 must
+match the source exactly.
+
+## What the data shows, and how much to believe
+
+```
+cancellation by source              bookings  cancelled   rate   avg lead
+   Online                                 32         13  40.6%       72d
+   Offline                                15          1   6.7%      100d
+   Aviation                                1          1 100.0%        2d
+   Corporate                               1          0   0.0%      122d
+
+lead time vs cancellation           bookings  cancelled   rate
+   0-6 days                                9          2  22.2%
+   7-29 days                               2          0   0.0%
+   30-89 days                             21          5  23.8%
+   90+ days                               17          8  47.1%
+```
+
+Two patterns suggest themselves. `significance_check.py` tests both, and the answers are
+not what the tables imply.
+
+**Lead time: borderline, not established.** Cancelled bookings were made 115 days ahead on
+average against 65 for kept ones. Point-biserial correlation: r = 0.287, p = 0.045, just
+significant. Welch t-test on the same relationship: p = 0.106, not significant. When the
+verdict flips on test choice, with 15 cancellations in 49 bookings, the honest answer is
+that the effect is suggestive and the sample too small.
+
+**Source: the chi-square is invalid, but one comparison holds.** Chi-square over all four
+sources gives p = 0.041 and should be discarded: **5 of 8 cells have expected counts below
+5**, because Aviation and Corporate have one booking each. Restricting to the two categories
+with real data:
+
+> **Online vs Offline, Fisher exact test: odds ratio 9.58, p = 0.0199**
+
+That one is valid and is the result worth quoting: online bookings are roughly nine times
+more likely to be cancelled than offline bookings in this sample.
+
+The 100% cancellation rate for Aviation is one booking. It should never appear in a summary
+without its denominator.
+
+## Running it
+
+```bash
+pip install -r requirements.txt
+createdb hotel                      # or CREATE DATABASE hotel;
+
+jupyter notebook notebooks/normalisation_to_postgres.ipynb   # the main path
+python etl.py                        # the same load, scripted and repeatable
+python significance_check.py         # the tests above
+```
+
+The notebook and `etl.py` both build the schema from `sql/01_schema.sql`, so there is one
+source of truth; they are alternatives, not a sequence.
+
+Credentials come from the environment; see `.env.example` at the repository root
+(`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `HOTEL_DB`).
+
+## Files
+
+```
+notebooks/normalisation_to_postgres.ipynb   the main artifact: 0NF -> 3NF -> PostgreSQL
+sql/01_schema.sql                           DDL, a DECISION note per normalisation step
+sql/02_views.sql                            flat reconstruction + three analysis views
+etl.py                                      scripted extract / transform / load / verify
+significance_check.py                       whether the patterns in the views are real
+notebooks/etl_hotel_original.ipynb          original MySQL coursework (credentials redacted)
+notebooks/normalisation_original.ipynb      original pandas normalisation, for comparison
+data/hotel_0nf.xlsx                         source spreadsheet
+```
+
+## Notes
+
+The two original notebooks are kept so the before and after are both visible, with the
+hardcoded MySQL password and home-directory paths redacted. Two pieces of copy-paste residue
+in them are worth knowing about if you read them: the ETL notebook connects to a database
+named `biopatients`, and a dataframe of hotel bookings is called `df_diagnosis`, both
+carried over from a different assignment.
+
+Individual coursework. Credentials in the original were hardcoded, including a MySQL root
+password shared across several other coursework notebooks; all are now environment
+variables.
