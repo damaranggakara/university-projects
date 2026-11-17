@@ -1,0 +1,29 @@
+# credentials - never commit
+kaggle.json
+.env
+*.key
+secrets.*
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# os
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# model artifacts (regenerable)
+*.sav
+*.pkl
+*.h5
+
+# generated warehouses
+*.db
+*.sqlite
+
+# large public dataset - use 14-clinical-prediction/fetch_data.py
+14-clinical-prediction/data/diabetes_brfss2015.csv

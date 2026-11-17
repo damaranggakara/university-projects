@@ -1,0 +1,16 @@
+# Notebook outputs are committed deliberately so the analysis renders on GitHub
+# without a reader running anything. The cost is unreadable diffs, so mark them
+# as such rather than pretending otherwise.
+*.ipynb   -diff
+*.ipynb   linguist-documentation=false
+
+# Keep line endings stable across Windows and the Linux CI runner.
+*.py      text eol=lf
+*.sql     text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.csv     text eol=lf
+*.xlsx    binary
+*.jpeg    binary
+*.png     binary
+*.zip     binary
